@@ -1,1 +1,7 @@
 .env
+/venv
+/app/__pycache__
+/app/img_tools/__pycache__
+/app/sql_dependant/__pycache__
+/app/static/projects/*
+/app/uploads/psd/*
