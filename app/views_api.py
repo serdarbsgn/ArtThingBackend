@@ -2,7 +2,7 @@ from io import BytesIO
 import os
 from typing import List
 from fastapi.responses import FileResponse, JSONResponse
-from helpers import IMAGE_DIRECTORY, PROJECT_DIR, check_file_size, get_file_md5, save_file
+from helpers import IMAGE_DIRECTORY, PROJECT_DIR, check_file_size, get_file_md5, limit_line_breaks, save_file
 from sql_dependant.sql_tables import Project
 from sql_dependant.sql_connection import sqlconn
 from sql_dependant.sql_read import Select
@@ -61,7 +61,7 @@ async def check_and_save_psd_file(request:Request,background_tasks: BackgroundTa
             creator_id = user_info["user"],
             id = file_hash,
             title = escape(title),
-            content=escape(content))
+            content=limit_line_breaks(escape(content),20))
             sql.session.add(project)
             sql.session.commit()
         background_tasks.add_task(save_file,*(filepath,file_hash,file_content,username))

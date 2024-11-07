@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi.responses import JSONResponse
+from helpers import limit_line_breaks
 from views_api import ProjectsResponse
 from sql_dependant.sql_write import Delete,Update
 from sql_dependant.sql_tables import  ProjectComment, ProjectCommentLikes, ProjectLikes
@@ -147,12 +148,13 @@ async def create_project_comment(request:Request,create_comment_info:CreateProje
     user_info = check_auth(request)
     project_id = create_comment_info.project_id
     parent_id = create_comment_info.parent_id
+    comment_content = limit_line_breaks(escape(create_comment_info.content),5)
     with sqlconn() as sql:
         comment = ProjectComment(
             user_id = user_info["user"],
             parent_id = parent_id,
             project_id = project_id,
-            content=escape(create_comment_info.content))
+            content=comment_content)
         sql.session.add(comment)
         sql.session.execute(Update.projectComment_replies({"comment_id":parent_id,"change":1}))
         sql.session.commit()
@@ -180,7 +182,7 @@ class UpdateProjectCommentInfo(BaseModel):
 @app.put('/project/comment/{comment_id}')
 async def update_project_comment(request:Request,comment_id:int,update_comment_info:UpdateProjectCommentInfo):
     user_info = check_auth(request)
-    comment_content = escape(update_comment_info.content)
+    comment_content = limit_line_breaks(escape(update_comment_info.content),5)
     with sqlconn() as sql:
         check_comment_exists = sql.session.execute(Select.project_comment({"comment_id":comment_id,"user_id":user_info["user_id"]})).mappings().fetchone()
         if not check_comment_exists:
