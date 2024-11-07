@@ -158,16 +158,18 @@ async def create_project_comment(request:Request,create_comment_info:CreateProje
         sql.session.commit()
         return MsgResponse(msg="Comment created successfully")
     
-@app.delete('/project/comment/{comment_id}')
+@app.delete('/project/comment')
 async def delete_project_comment(request:Request,comment_id:int):
     user_info = check_auth(request)
+    user_id = user_info["user"]
+    comment_id = comment_id
     with sqlconn() as sql:
         check_comment_exists = sql.session.execute(Select.project_comment({"comment_id":comment_id})).mappings().fetchone()
         if not check_comment_exists:
             return JSONResponse(content={"detail": "You can't delete what doesn't exist."}, status_code=404)
-        if not (check_comment_exists["user_id"] == user_info["user_id"]):
+        if not (check_comment_exists["user_id"] == user_id):
             return JSONResponse(content={"detail": "You can't delete a comment someone else created."}, status_code=403)
-        sql.session.execute(Delete.projectComments({"user_id":user_info["user_id"],"comment_id":comment_id}))
+        sql.session.execute(Delete.projectComments({"user_id":user_id,"comment_id":comment_id}))
         sql.session.execute(Update.projectComment_replies({"comment_id":check_comment_exists["parent_id"],"change":-1}))
         sql.session.commit()
         return MsgResponse(msg="Deleted comment")

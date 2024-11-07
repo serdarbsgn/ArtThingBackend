@@ -104,7 +104,7 @@ class ImagesResponse(BaseModel):
     user_like:str|None
 
 
-@app.get('/info/{project_id}',
+@app.get('/project/{project_id}',
         responses={
         200: {
             "description": "Success response",
