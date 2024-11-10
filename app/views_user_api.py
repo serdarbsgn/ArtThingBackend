@@ -143,6 +143,9 @@ class CreateProjectCommentInfo(BaseModel):
     project_id: str
     content: str = Field(min_length=4)
 
+class MsgResponseWithID(BaseModel):
+    msg : str
+    id:int
 @app.post('/project/comment')
 async def create_project_comment(request:Request,create_comment_info:CreateProjectCommentInfo):
     user_info = check_auth(request)
@@ -158,7 +161,7 @@ async def create_project_comment(request:Request,create_comment_info:CreateProje
         sql.session.add(comment)
         sql.session.execute(Update.projectComment_replies({"comment_id":parent_id,"change":1}))
         sql.session.commit()
-        return MsgResponse(msg="Comment created successfully")
+        return MsgResponseWithID(msg="Comment created successfully",id = comment.id)
     
 @app.delete('/project/comment')
 async def delete_project_comment(request:Request,comment_id:int):
