@@ -25,9 +25,9 @@ async def user_stats(request:Request):
     user_info = check_auth(request)
     with sqlconn() as sql:
         user_project_count = sql.session.execute(Select.user_project_count({"creator_id":user_info["user"]})).mappings().fetchone()["count"]
-        user_project_karma = sql.session.execute(Select.user_karma_point_project({"creator_id":user_info["user"]})).mappings().fetchone()["sum"]
+        user_project_karma = sql.session.execute(Select.user_karma_point_project({"creator_id":user_info["user"]})).mappings().fetchone()["sum"]  or 0
         user_project_comment_count = sql.session.execute(Select.user_project_comment_count({"user_id":user_info["user"]})).mappings().fetchone()["count"]
-        user_project_comment_karma = sql.session.execute(Select.user_karma_point_comment({"user_id":user_info["user"]})).mappings().fetchone()["sum"]
+        user_project_comment_karma = sql.session.execute(Select.user_karma_point_comment({"user_id":user_info["user"]})).mappings().fetchone()["sum"] or 0
         return UserStatsResponse(projectCount=user_project_count,projectKarmaTotal=user_project_karma,projectCommentCount=user_project_comment_count,projectCommentKarmaTotal=user_project_comment_karma)
 
 class CreatorInfoResponse(BaseModel):
