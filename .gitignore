@@ -7,3 +7,4 @@
 /app/uploads/psd/*
 .pytest_cache
 .coverage
+.vscode
