@@ -2,13 +2,13 @@ from io import BytesIO
 import os
 from typing import List
 from fastapi.responses import FileResponse, JSONResponse
-from helpers import IMAGE_DIRECTORY, PROJECT_DIR, check_file_size, get_file_md5, limit_line_breaks, save_file
-from sql_dependant.sql_tables import Project
-from sql_dependant.sql_connection import sqlconn
-from sql_dependant.sql_read import Select
-from utils import check_auth
-from img_tools.psd_helper import psd_check
-from main import app
+from .helpers import IMAGE_DIRECTORY, PROJECT_DIR, check_file_size, get_file_md5, limit_line_breaks, save_file
+from .sql_dependant.sql_tables import Project
+from .sql_dependant.sql_connection import sqlconn
+from .sql_dependant.sql_read import Select
+from .utils import check_auth
+from .img_tools.psd_helper import psd_check
+from .main import app
 from fastapi import Depends, Form,  Query, UploadFile,BackgroundTasks,Request
 from pydantic import BaseModel
 from html import escape

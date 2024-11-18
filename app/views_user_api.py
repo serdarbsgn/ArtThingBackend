@@ -2,14 +2,14 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi.responses import JSONResponse
-from helpers import limit_line_breaks
-from views_api import ProjectsResponse
-from sql_dependant.sql_write import Delete,Update
-from sql_dependant.sql_tables import  ProjectComment, ProjectCommentLikes, ProjectLikes
-from sql_dependant.sql_connection import sqlconn
-from sql_dependant.sql_read import Select
-from utils import check_auth
-from main import app
+from .helpers import limit_line_breaks
+from .views_api import ProjectsResponse
+from .sql_dependant.sql_write import Delete,Update
+from .sql_dependant.sql_tables import  ProjectComment, ProjectCommentLikes, ProjectLikes
+from .sql_dependant.sql_connection import sqlconn
+from .sql_dependant.sql_read import Select
+from .utils import check_auth
+from .main import app
 from fastapi import Query, Request
 from pydantic import BaseModel, Field
 from html import escape
@@ -161,7 +161,7 @@ async def create_project_comment(request:Request,create_comment_info:CreateProje
         sql.session.add(comment)
         sql.session.execute(Update.projectComment_replies({"comment_id":parent_id,"change":1}))
         sql.session.commit()
-        return MsgResponseWithID(msg="Comment created successfully",id = comment.id)
+        return MsgResponseWithID(msg=f"Comment created successfully",id = comment.id)
     
 @app.delete('/project/comment')
 async def delete_project_comment(request:Request,comment_id:int):
@@ -185,12 +185,15 @@ class UpdateProjectCommentInfo(BaseModel):
 @app.put('/project/comment/{comment_id}')
 async def update_project_comment(request:Request,comment_id:int,update_comment_info:UpdateProjectCommentInfo):
     user_info = check_auth(request)
+    user_id = user_info["user"]
     comment_content = limit_line_breaks(escape(update_comment_info.content),5)
     with sqlconn() as sql:
-        check_comment_exists = sql.session.execute(Select.project_comment({"comment_id":comment_id,"user_id":user_info["user_id"]})).mappings().fetchone()
+        check_comment_exists = sql.session.execute(Select.project_comment({"comment_id":comment_id,"user_id":user_id})).mappings().fetchone()
         if not check_comment_exists:
             return JSONResponse(content={"detail": "You can't edit what doesn't exist."}, status_code=404)
-        sql.session.execute(Update.projectComments({"user_id":user_info["user_id"],"comment_id":comment_id,"content":comment_content}))
+        if not (check_comment_exists["user_id"] == user_id):
+            return JSONResponse(content={"detail": "You can't edit a comment someone else created."}, status_code=403)
+        sql.session.execute(Update.projectComments({"user_id":user_id,"comment_id":comment_id,"content":comment_content}))
         sql.session.commit()
         return MsgResponse(msg="Updated comment")
 

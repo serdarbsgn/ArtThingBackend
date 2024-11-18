@@ -5,3 +5,5 @@
 /app/sql_dependant/__pycache__
 /app/static/projects/*
 /app/uploads/psd/*
+.pytest_cache
+.coverage

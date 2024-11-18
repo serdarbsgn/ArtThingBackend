@@ -1,7 +1,7 @@
 from sqlalchemy import  delete, func, literal, select, update,desc,not_,exists
 from sqlalchemy.orm import aliased
 from sqlalchemy.dialects.mysql import insert
-from sql_dependant.sql_tables import *
+from ..sql_dependant.sql_tables import *
 from sqlalchemy.sql.functions import coalesce,concat,count
 
 class Select():

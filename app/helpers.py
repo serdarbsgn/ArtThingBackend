@@ -1,7 +1,7 @@
 import os
 import hashlib
 from fastapi import HTTPException, UploadFile
-from img_tools.psd_helper import layered_images
+from .img_tools.psd_helper import layered_images
 
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))

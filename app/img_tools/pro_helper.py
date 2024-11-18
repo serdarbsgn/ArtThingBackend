@@ -1,7 +1,7 @@
 import numpy as np
 from pyprocreate import Project
 from PIL import ImageDraw, ImageFont,Image
-
+#Copy of the psd_helper, not checked yet.
 def pro_check(filename):
     try:
         pro = Project(filename)
