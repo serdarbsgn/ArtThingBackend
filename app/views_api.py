@@ -101,6 +101,7 @@ class ImagesResponse(BaseModel):
     content: str
     likes: int
     created_at:datetime
+    variations:int
     user_like:str|None
 
 
@@ -120,10 +121,16 @@ async def img(project_id:str,request:Request):
             user_project_like  = sql.session.execute(Select.projectLikes_exists({"user_id":user_info["user"],"project_id":escape(project_id)})).mappings().fetchone()["l_d"]
         except:#exception means user is not logged in or doesn't have like or dislike on this project.
             pass
-    images = [name for name in os.listdir(os.path.join(IMAGE_DIRECTORY,project_id)) if os.path.isfile(os.path.join(IMAGE_DIRECTORY,project_id,name))]
-    images.sort()
-    images.pop()#pop the last image, thumbnail.png since others will start with numbers this'll be always last.
-    return ImagesResponse(images=images, **info,user_like=user_project_like)
+        image_dir = os.path.join(IMAGE_DIRECTORY, project_id)
+    all_images = [name for name in os.listdir(image_dir) if os.path.isfile(os.path.join(image_dir, name))]
+    original_images = [name for name in all_images if name.count('_') == 2]
+    original_images.sort()
+    if len(original_images) == 1:
+        variations = 0
+    else:
+        variations = sum(1 for name in all_images if name.startswith("1_") and name.count('_') == 3)
+
+    return ImagesResponse(images=original_images, variations=variations, **info, user_like=user_project_like)
 
 @app.get('/image/{project_id}/{filename}',
         responses={
