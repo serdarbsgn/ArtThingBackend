@@ -1,4 +1,5 @@
 from io import BytesIO
+import json
 import os
 from typing import List
 from fastapi.responses import FileResponse, JSONResponse
@@ -12,7 +13,7 @@ from .main import app
 from fastapi import Depends, Form,  Query, UploadFile,BackgroundTasks,Request
 from pydantic import BaseModel
 from html import escape
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 
@@ -121,16 +122,37 @@ async def img(project_id:str,request:Request):
             user_project_like  = sql.session.execute(Select.projectLikes_exists({"user_id":user_info["user"],"project_id":escape(project_id)})).mappings().fetchone()["l_d"]
         except:#exception means user is not logged in or doesn't have like or dislike on this project.
             pass
-        image_dir = os.path.join(IMAGE_DIRECTORY, project_id)
-    all_images = [name for name in os.listdir(image_dir) if os.path.isfile(os.path.join(image_dir, name))]
-    original_images = [name for name in all_images if name.count('_') == 2]
-    original_images.sort()
-    if len(original_images) == 1:
-        variations = 0
-    else:
-        variations = sum(1 for name in all_images if name.startswith("1_") and name.count('_') == 3)
 
-    return ImagesResponse(images=original_images, variations=variations, **info, user_like=user_project_like)
+    image_dir = os.path.join(IMAGE_DIRECTORY, project_id)
+    cache_path = os.path.join(image_dir,"cache.json")
+    is_cache_stale = True
+    data = {}
+    if os.path.exists(cache_path):
+        with open(cache_path, "r") as cache_file:
+            data = json.load(cache_file)
+        cache_timestamp = datetime.fromisoformat(data.get("timestamp", "1970-01-01T00:00:00"))
+        if datetime.now() - cache_timestamp < timedelta(hours=24):
+            is_cache_stale = False
+
+    if is_cache_stale:
+        all_images = [name for name in os.listdir(image_dir) if os.path.isfile(os.path.join(image_dir, name)) and name.endswith(".png") or name.endswith(".webp")]
+        original_images = [name for name in all_images if name.count('_') == 2 and name.endswith(".png")]
+        original_images.sort()
+        if len(original_images) == 1:
+            variations = 0
+        else:
+            variations_png = sum(1 for name in all_images if name.startswith("1_") and name.count('_') == 3 and name.endswith(".png"))
+            variations_webp = sum(1 for name in all_images if name.startswith("1_") and name.count('_') == 3 and name.endswith(".webp"))
+            variations = max(variations_png,variations_webp)
+        data = {
+                "timestamp": datetime.now().isoformat(),
+                "images": original_images,
+                "variations": variations,
+            }
+        with open(cache_path, "w") as cache_file:
+            json.dump(data, cache_file)
+
+    return ImagesResponse(images=data["images"], variations=data["variations"], **info, user_like=user_project_like)
 
 @app.get('/image/{project_id}/{filename}',
         responses={
@@ -148,5 +170,9 @@ async def get_image(project_id: str,filename: str):
     file_path = os.path.join(IMAGE_DIRECTORY, project_id, filename)
     if os.path.exists(file_path):
         return FileResponse(file_path)
-    else:
-        return JSONResponse(content={"detail": "Image not found."}, status_code=404)
+    base_name, ext = os.path.splitext(file_path)
+    fallback_ext = ".webp" if ext.lower() == ".png" else ".png"
+    fallback_path = f"{base_name}{fallback_ext}"
+    if os.path.exists(fallback_path):
+        return FileResponse(fallback_path)
+    return JSONResponse(content={"detail": "Image not found."}, status_code=404)
