@@ -1,8 +1,8 @@
 import os
 import hashlib
 from fastapi import HTTPException, UploadFile
-from .img_tools.psd_helper import layered_images
-
+from .img_tools.psd_helper import layered_images as psd_layered_images
+from .img_tools.pro_helper import layered_images as pro_layered_images
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 MAX_UPLOAD_SIZE = 20*1024*1024+1
@@ -26,12 +26,15 @@ def get_file_md5(content: bytes) -> str:
     md5_hash = hashlib.md5(content).hexdigest()
     return md5_hash
 
-def save_file(filepath,filename,content,artist):
+def save_file(filepath,filename,content,artist,file_type):
     with open(filepath,"wb") as fp:
         fp.write(content)
     save_location = f'{PROJECT_DIR}/static/projects/{filename}'
     os.makedirs(save_location, exist_ok=True)
-    layered_images(filepath,artist,save_location)
+    if file_type == "psd":
+        psd_layered_images(filepath,artist,save_location)
+    else:
+        pro_layered_images(filepath,artist,save_location)
 
 def limit_line_breaks(content:str, max_line_breaks=255):
     lines = content.splitlines()

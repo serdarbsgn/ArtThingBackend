@@ -3,6 +3,8 @@ import json
 import os
 from typing import List
 from fastapi.responses import FileResponse, JSONResponse
+
+from .img_tools.pro_helper import pro_check
 from .helpers import IMAGE_DIRECTORY, PROJECT_DIR, check_file_size, get_file_md5, limit_line_breaks, save_file
 from .sql_dependant.sql_tables import Project
 from .sql_dependant.sql_connection import sqlconn
@@ -10,6 +12,7 @@ from .sql_dependant.sql_read import Select
 from .utils import check_auth
 from .img_tools.psd_helper import psd_check
 from .main import app
+
 from fastapi import Depends, Form,  Query, UploadFile,BackgroundTasks,Request
 from pydantic import BaseModel
 from html import escape
@@ -43,30 +46,56 @@ class MsgResponse(BaseModel):
             "model": ErrorResponse
         }
         })
-async def check_and_save_psd_file(request:Request,background_tasks: BackgroundTasks,
-                                  file: UploadFile = Depends(check_file_size),title: str = Form(...),content: str = Form(...)):
+async def check_and_save_file(request: Request, background_tasks: BackgroundTasks,
+                              file: UploadFile = Depends(check_file_size), title: str = Form(...),
+                              content: str = Form(...)):
+    # Authentication check
     user_info = check_auth(request)
+    
+    # Read file content
     file_content = await file.read()
     if not file_content:
         return JSONResponse(content={"detail": "No file received."}, status_code=400)
-    if not psd_check(BytesIO(file_content)):
-        return JSONResponse(content={"detail": "Sent file is not a psd."}, status_code=400)
+    
+    # Determine file type and validate
+    file_type = None
+    if psd_check(BytesIO(file_content)):
+        file_type = "psd"
+    elif pro_check(BytesIO(file_content)):
+        file_type = "procreate"
+    else:
+        return JSONResponse(content={"detail": "Sent file is neither a valid psd nor a procreate file."}, status_code=400)
+    
+    # Generate file hash
     file_hash = get_file_md5(file_content)
-    filepath = os.path.join(PROJECT_DIR, "uploads/psd", file_hash+".psd")
+    if file_type == "psd":
+        filepath = os.path.join(PROJECT_DIR, "uploads/psd", file_hash + ".psd")
+    else:  # procreate
+        filepath = os.path.join(PROJECT_DIR, "uploads/procreate", file_hash + ".procreate")
+    
+    # Check if file already exists in the system
     if not os.path.exists(filepath):
         username = "Test-Artist"
+        
+        # Get the username of the user
         with sqlconn() as sql:
-            get_user = sql.session.execute(Select.user_username({"id":user_info["user"]})).mappings().fetchone()
+            get_user = sql.session.execute(Select.user_username({"id": user_info["user"]})).mappings().fetchone()
             username = get_user["username"]
+            
+            # Create and store the project information
             project = Project(
-            creator_id = user_info["user"],
-            id = file_hash,
-            title = escape(title),
-            content=limit_line_breaks(escape(content),20))
+                creator_id=user_info["user"],
+                id=file_hash,
+                title=escape(title),
+                content=limit_line_breaks(escape(content), 20)
+            )
             sql.session.add(project)
             sql.session.commit()
-        background_tasks.add_task(save_file,*(filepath,file_hash,file_content,username))
-    return MsgResponse(msg="PSD saved successfully!")
+        
+        # Schedule the background task to save the file
+        background_tasks.add_task(save_file, filepath, file_hash, file_content, username,file_type)
+    
+    return JSONResponse(content={"msg": f"{file_type.capitalize()} file saved successfully!"}, status_code=200)
 
 
 class ProjectResponse(BaseModel):

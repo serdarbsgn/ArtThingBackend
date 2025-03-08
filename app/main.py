@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI(root_path="/project")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://192.168.1.41:5173"],  
+    allow_origins=["http://192.168.1.107:5173"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

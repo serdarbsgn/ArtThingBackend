@@ -5,6 +5,7 @@
 /app/sql_dependant/__pycache__
 /app/static/projects/*
 /app/uploads/psd/*
+/app/uploads/procreate/*
 .pytest_cache
 .coverage
 .vscode
