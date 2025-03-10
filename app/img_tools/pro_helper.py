@@ -1,37 +1,89 @@
+from math import ceil
 import struct
 import zipfile
+from plistlib import loads,UID
 import lz4.block
 import numpy as np
-from pyprocreate import Project # works but doesnt work for retrieving images so written custom methods for that
 from PIL import ImageDraw, ImageFont,Image
 import os
 
 #Copy of the psd_helper, not checked yet.
-def pro_check(filename):
-    try:
-        pro = Project(filename)
-        if not pro.layers:
-            raise Exception
-        return pro
-    except Exception as e:
-        print(e)
-        return None
-     
+def pro_check(file):
+    with zipfile.ZipFile(file, 'r') as zip_ref:
+        try:
+            doc_archive = zip_ref.read("Document.archive")
+            doc_archive_bytes = bytes(doc_archive)
+            arc_dict = loads(doc_archive_bytes)
+            objects = arc_dict.get("$objects")
+            chunk_size = objects[1].get('tileSize')
+            image_size = [int(x) for x in objects[objects[1]["size"].data].strip("{").strip("}").split(", ")]
+            v_flip = objects[1].get('flippedVertically')
+            h_flip = objects[1].get('flippedHorizontally')
+            grid_dimensions = [int(ceil(dim/chunk_size)) for dim in image_size]
+            layers_info = resolve_layers_uid(objects,objects[1]["layers"])
+            bounding_rect = (0,0,image_size[0],image_size[1])
+            orientation = objects[1].get('orientation')
+            return True
+        except Exception as e:
+            print(e)
+            return None
+    
+#What we need to get rid of pyprocreate
+#tilesize
+#project viewport
+#grid_dimensions can be calculated by above 2
+#layer list with relevant info in it
+
+
+def resolve_layers_uid(objects,layers_uid):
+    info_dict = objects[layers_uid.data]
+    if not isinstance(info_dict,dict):
+        print("This is not looking like a layer info array.")
+    if not "NS.objects" in info_dict:
+        print("This is not looking like a layer info array.")
+    layer_uid_array = objects[layers_uid.data].get("NS.objects")
+    layer_dict_array = []
+    for uid in layer_uid_array:
+        resolved_dict = {}
+        for key,value in objects[uid.data].items():
+            if isinstance(value,UID):
+                resolved_dict[key] = objects[value.data]
+            else:
+                resolved_dict[key] = value
+        layer_dict_array.append(resolved_dict)
+    return layer_dict_array
+
 def layered_images(filepath,artist,save_location):
-    pro = pro_check(filepath)
+    with zipfile.ZipFile(filepath, 'r') as zip_ref:
+        try:
+            doc_archive = zip_ref.read("Document.archive")
+            doc_archive_bytes = bytes(doc_archive)
+            arc_dict = loads(doc_archive_bytes)
+            objects = arc_dict.get("$objects")
+            chunk_size = objects[1].get('tileSize')
+            image_size = [int(x) for x in objects[objects[1]["size"].data].strip("{").strip("}").split(", ")]
+            v_flip = objects[1].get('flippedVertically')
+            h_flip = objects[1].get('flippedHorizontally')
+            grid_dimensions = [int(ceil(dim/chunk_size)) for dim in image_size]
+            layers_info = resolve_layers_uid(objects,objects[1]["layers"])
+            bounding_rect = (0,0,image_size[0],image_size[1])
+            orientation = objects[1].get('orientation')
+        except:
+            return None
+        
+        final_image = Image.new("RGBA", (image_size[0], image_size[1]), (255, 255, 255, 0))
+        for i,layer in enumerate(reversed(layers_info)):
+            if not layer["hidden"]:
+                image,new_x,new_y = uuid_folder_to_png(zip_ref,layer,chunk_size=chunk_size,
+                                grid_dimensions=grid_dimensions,
+                                project_bb=bounding_rect,orientation=orientation,flips = [h_flip,v_flip],watermark=artist)
+                output_image_path = os.path.join(save_location, f"{i}_{new_x}_{new_y}.png")
+                image.save(output_image_path)
+                final_image.alpha_composite(image, (new_x, new_y))
 
-    final_image = Image.new("RGBA", (pro.dimensions[0], pro.dimensions[1]), (255, 255, 255, 0))
-    for i,layer in enumerate(reversed(pro.layers)):
-        image,new_x,new_y = uuid_folder_to_png(filepath,layer,chunk_size=pro.tilesize,
-                           grid_dimensions=(pro.columns,pro.rows),
-                           project_bb=pro.bounding_rect,watermark=artist)
-        output_image_path = os.path.join(save_location, f"{i}_{new_x}_{new_y}.png")
-        image.save(output_image_path)
-        final_image.alpha_composite(image, (new_x, new_y))
-
-    final_image.thumbnail((300,300))
-    final_image.save(f'{save_location}/thumbnail.png')
-    return len(pro.layers)
+        final_image.thumbnail((300,300))
+        final_image.save(f'{save_location}/thumbnail.png')
+        return len(layers_info)
 
 def find_crop_bounds(image):
     """
@@ -107,45 +159,43 @@ def extract_images_from_lz4(data):
 
     return decompressed_data
 
-def uuid_folder_to_png(file_path,layer,chunk_size = 256,
-                       grid_dimensions=(0,0),project_bb=(0,0,1920,1080),watermark = "Test-Artist"):
+def uuid_folder_to_png(zip_ref,layer,chunk_size = 256,
+                       grid_dimensions=(0,0),project_bb=(0,0,1920,1080),orientation = 3,flips = [False,False],watermark = "Test-Artist"):
+    # Step 2: Extract the UUID-named folder for the layer
+    layer_folder = f"{layer['UUID']}/"  # The folder within the zip
+
+    # Step 3: Extract the chunk positions (x, y) from the layer folder
+    lz4_files = [f for f in zip_ref.namelist() if f.startswith(layer_folder) and f.endswith(".lz4")]
+
+    # Step 4: Extract chunk positions (x, y) from filenames like "2~3.lz4"
+    chunk_positions = {}
+    for filename in lz4_files:
+        if "~" in filename:
+            chunk_name = filename.split(".lz4")[0].split("/")[-1]  # Get the chunk name
+            x, y = map(int, chunk_name.split("~"))
+            chunk_positions[(x, y)] = filename
+
+    # Step 4: Create a 2D grid for the chunks, with initial empty data
+    grid_width = grid_dimensions[0]
+    grid_height = grid_dimensions[1]
+    grid = np.zeros((grid_height, grid_width), dtype=object)  # Each cell holds chunk data
+
+    # Step 5: Place chunks in the grid
+    for (x, y), chunk_file in chunk_positions.items():
+        file_data = zip_ref.read(chunk_file)
+        decompressed_data = extract_images_from_lz4(file_data)
+
+        try:
+            img_array = np.frombuffer(decompressed_data, dtype=np.uint8).reshape((chunk_size, chunk_size, 4))
+        except:
+            pass
+        grid[y, x] = img_array
+    # Step 6: Fill missing chunks with empty data (transparent pixels)
     
-    with zipfile.ZipFile(file_path, 'r') as zip_ref:
-        # Step 2: Extract the UUID-named folder for the layer
-        layer_folder = f"{layer.UUID}/"  # The folder within the zip
-
-        # Step 3: Extract the chunk positions (x, y) from the layer folder
-        lz4_files = [f for f in zip_ref.namelist() if f.startswith(layer_folder) and f.endswith(".lz4")]
-
-        # Step 4: Extract chunk positions (x, y) from filenames like "2~3.lz4"
-        chunk_positions = {}
-        for filename in lz4_files:
-            if "~" in filename:
-                chunk_name = filename.split(".lz4")[0].split("/")[-1]  # Get the chunk name
-                x, y = map(int, chunk_name.split("~"))
-                chunk_positions[(x, y)] = filename
-
-        # Step 4: Create a 2D grid for the chunks, with initial empty data
-        grid_width = grid_dimensions[0]
-        grid_height = grid_dimensions[1]
-        grid = np.zeros((grid_height, grid_width), dtype=object)  # Each cell holds chunk data
-
-        # Step 5: Place chunks in the grid
-        for (x, y), chunk_file in chunk_positions.items():
-            file_data = zip_ref.read(chunk_file)
-            decompressed_data = extract_images_from_lz4(file_data)
-
-            try:
-                img_array = np.frombuffer(decompressed_data, dtype=np.uint8).reshape((chunk_size, chunk_size, 4))
-            except:
-                pass
-            grid[y, x] = img_array
-        # Step 6: Fill missing chunks with empty data (transparent pixels)
-        
-        for row in range(grid_height):
-            for col in range(grid_width):
-                if np.all(grid[row, col] == 0):
-                    grid[row, col] = np.zeros((chunk_size, chunk_size, 4), dtype=np.uint8)
+    for row in range(grid_height):
+        for col in range(grid_width):
+            if np.all(grid[row, col] == 0):
+                grid[row, col] = np.zeros((chunk_size, chunk_size, 4), dtype=np.uint8)
 
     # Step 7: Combine the chunks into a final image
     final_image = []
@@ -164,20 +214,21 @@ def uuid_folder_to_png(file_path,layer,chunk_size = 256,
     # Step 8: Convert to PIL image and save
     img = Image.fromarray(final_image, "RGBA")
     
-    if layer.orientation == 3:
+
+    if orientation == 3:
         img = img.rotate(90, expand=True)
-    elif layer.orientation == 4:
+    elif orientation == 4:
         img = img.rotate(-90, expand=True)
-    elif layer.orientation == 2:
+    elif orientation == 2:
         img = img.rotate(180, expand=True)
 
-    if layer.h_flipped == 1 and (layer.orientation == 1 or layer.orientation == 2):
+    if flips[0] and (orientation == 1 or orientation == 2):
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
-    if layer.h_flipped == 1 and (layer.orientation == 3 or layer.orientation == 4):
+    if flips[0] and (orientation == 3 or orientation == 4):
         img = img.transpose(Image.FLIP_TOP_BOTTOM)
-    if layer.v_flipped == 1 and (layer.orientation == 1 or layer.orientation == 2):
+    if flips[1] and (orientation == 1 or orientation == 2):
         img = img.transpose(Image.FLIP_TOP_BOTTOM)
-    if layer.v_flipped == 1 and (layer.orientation == 3 or layer.orientation == 4):
+    if flips[1] and (orientation == 3 or orientation == 4):
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
 
     img = img.crop(project_bb)
@@ -209,3 +260,5 @@ def uuid_folder_to_png(file_path,layer,chunk_size = 256,
     draw.text((text_x, text_y), watermark, fill="white", font=font)
     
     return (img,left_crop,top_crop)
+
+layered_images("/home/serdaryu/Desktop/VueArtThingyBackend/app/uploads/procreate/0fcc89a2556b1201dcde27ea6fc95098.procreate","Test","/home/serdaryu/Desktop/VueArtThingyBackend/app/static/projects/0fcc89a2556b1201dcde27ea6fc95098")
