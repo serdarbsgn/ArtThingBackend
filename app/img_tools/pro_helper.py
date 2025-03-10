@@ -7,7 +7,7 @@ import numpy as np
 from PIL import ImageDraw, ImageFont,Image
 import os
 
-#Copy of the psd_helper, not checked yet.
+#Works? At least for one .procreate example.
 def pro_check(file):
     with zipfile.ZipFile(file, 'r') as zip_ref:
         try:
@@ -28,13 +28,6 @@ def pro_check(file):
             print(e)
             return None
     
-#What we need to get rid of pyprocreate
-#tilesize
-#project viewport
-#grid_dimensions can be calculated by above 2
-#layer list with relevant info in it
-
-
 def resolve_layers_uid(objects,layers_uid):
     info_dict = objects[layers_uid.data]
     if not isinstance(info_dict,dict):
@@ -161,13 +154,13 @@ def extract_images_from_lz4(data):
 
 def uuid_folder_to_png(zip_ref,layer,chunk_size = 256,
                        grid_dimensions=(0,0),project_bb=(0,0,1920,1080),orientation = 3,flips = [False,False],watermark = "Test-Artist"):
-    # Step 2: Extract the UUID-named folder for the layer
+    # Step 1: Extract the UUID-named folder for the layer
     layer_folder = f"{layer['UUID']}/"  # The folder within the zip
 
-    # Step 3: Extract the chunk positions (x, y) from the layer folder
+    # Step 2: Extract the chunk positions (x, y) from the layer folder
     lz4_files = [f for f in zip_ref.namelist() if f.startswith(layer_folder) and f.endswith(".lz4")]
 
-    # Step 4: Extract chunk positions (x, y) from filenames like "2~3.lz4"
+    # Step 3: Extract chunk positions (x, y) from filenames like "2~3.lz4"
     chunk_positions = {}
     for filename in lz4_files:
         if "~" in filename:
@@ -214,7 +207,7 @@ def uuid_folder_to_png(zip_ref,layer,chunk_size = 256,
     # Step 8: Convert to PIL image and save
     img = Image.fromarray(final_image, "RGBA")
     
-
+    # Correct rotation and flips, needs more testing
     if orientation == 3:
         img = img.rotate(90, expand=True)
     elif orientation == 4:
@@ -234,6 +227,7 @@ def uuid_folder_to_png(zip_ref,layer,chunk_size = 256,
     img = img.crop(project_bb)
     img = img.transpose(Image.FLIP_LEFT_RIGHT)
 
+    #Remove transparent pixels from 4 sides to reduce layer size, while retaining correct layer position.
     final_image = np.array(img)
     top_crop, bottom_crop, left_crop, right_crop = find_crop_bounds(final_image)
     img = Image.fromarray(final_image, "RGBA")
@@ -259,6 +253,6 @@ def uuid_folder_to_png(zip_ref,layer,chunk_size = 256,
 
     draw.text((text_x, text_y), watermark, fill="white", font=font)
     
-    return (img,left_crop,top_crop)
+    #Return image and starting coordinates on layer
 
-layered_images("/home/serdaryu/Desktop/VueArtThingyBackend/app/uploads/procreate/0fcc89a2556b1201dcde27ea6fc95098.procreate","Test","/home/serdaryu/Desktop/VueArtThingyBackend/app/static/projects/0fcc89a2556b1201dcde27ea6fc95098")
+    return (img,left_crop,top_crop)
